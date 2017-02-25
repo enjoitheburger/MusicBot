@@ -20,6 +20,7 @@ class PermissionsDefaults:
 
     AllowPlaylists = True
     InstaSkip = False
+    AutoSaveSong = False
 
 
 class Permissions:
@@ -101,6 +102,7 @@ class PermissionGroup:
 
         self.allow_playlists = section_data.get('AllowPlaylists', fallback=PermissionsDefaults.AllowPlaylists)
         self.instaskip = section_data.get('InstaSkip', fallback=PermissionsDefaults.InstaSkip)
+        self.auto_save_song = section_data.get('AutoSaveSong', fallback=PermissionsDefaults.AutoSaveSong)
 
         self.validate()
 

@@ -32,7 +32,7 @@ from . import exceptions
 from . import downloader
 from .opus_loader import load_opus_lib
 from .constants import VERSION as BOTVERSION
-from .constants import DISCORD_MSG_CHAR_LIMIT, AUDIO_CACHE_PATH
+from .constants import DISCORD_MSG_CHAR_LIMIT, AUDIO_CACHE_PATH, MAXIMUM_AUTOPLAYLIST_LIMIT
 
 
 load_opus_lib()
@@ -139,6 +139,19 @@ class MusicBot(discord.Client):
                 return False
 
         return True
+
+    # TODO: better place to put this?
+    def _append_to_autoplaylist(self, song_url):
+        print(song_url)
+        if len(self.autoplaylist) <= MAXIMUM_AUTOPLAYLIST_LIMIT:
+            if song_url in self.autoplaylist:
+                raise exceptions.CommandError('Song is already in autoplaylist', expire_in=30)
+
+            self.autoplaylist.append(song_url)
+            self.safe_print("Adding song to autoplaylist: %s" % song_url)
+            write_file(self.config.auto_playlist_file, self.autoplaylist)
+        else:
+            raise exceptions.CommandError("Exceeded %s entries in autoplaylist", expire_in=20)
 
     # TODO: autosummon option to a specific channel
     async def _auto_summon(self):
@@ -842,6 +855,43 @@ class MusicBot(discord.Client):
         except:
             raise exceptions.CommandError('Invalid URL provided:\n{}\n'.format(server_link), expire_in=30)
 
+    @owner_only
+    async def cmd_promote(self, player):
+        """
+        Usage:
+            {command_prefix}promote
+
+        Promotes the current song to the autoplaylist. Requires owner permission.
+        """
+
+        if player.current_entry:
+            song_url = player.current_entry.url
+            self._append_to_autoplaylist(song_url)
+        else:
+            # TODO: when does this happen?
+            raise exceptions.CommandError("The player has no currenty entry!", expire_in=20)
+
+    @owner_only
+    async def cmd_demote(self, player):
+        """
+        Usage:
+            {command_prefix}demote
+
+        Remove the current song from the autoplaylist. Requires owner permission.
+        """
+
+        if player.current_entry:
+            song_url = player.current_entry.url
+            try:
+                self.autoplaylist.remove(song_url)
+            except:
+                raise exceptions.CommandError('Song is not in autoplaylist', expire_in=30)
+
+            self.safe_print("Removing song from autoplaylist: %s" % song_url)
+            write_file(self.config.auto_playlist_file, self.autoplaylist)
+        else:
+            raise exceptions.CommandError("The player has no currenty entry!", expire_in=20)
+
     async def cmd_play(self, player, channel, author, permissions, leftover_args, song_url):
         """
         Usage:
@@ -853,6 +903,11 @@ class MusicBot(discord.Client):
         """
 
         song_url = song_url.strip('<>')
+
+        # Automatically append song to autoplaylist if permitted
+        user_permissions = self.permissions.for_user(author)
+        if user_permissions.auto_save_song or author.id == self.config.owner_id:
+            self._append_to_autoplaylist(song_url)
 
         if permissions.max_songs and player.playlist.count_for_user(author) >= permissions.max_songs:
             raise exceptions.PermissionsError(
