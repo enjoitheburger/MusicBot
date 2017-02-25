@@ -141,17 +141,16 @@ class MusicBot(discord.Client):
         return True
 
     # TODO: better place to put this?
-    def _append_to_autoplaylist(self, song_url):
+    async def _append_to_autoplaylist(self, channel, song_url, song_title):
         print(song_url)
         if len(self.autoplaylist) <= MAXIMUM_AUTOPLAYLIST_LIMIT:
-            if song_url in self.autoplaylist:
-                raise exceptions.CommandError('Song is already in autoplaylist', expire_in=30)
-
-            self.autoplaylist.append(song_url)
-            self.safe_print("Adding song to autoplaylist: %s" % song_url)
-            write_file(self.config.auto_playlist_file, self.autoplaylist)
+            if song_url not in self.autoplaylist:
+                self.autoplaylist.append(song_url)
+                self.safe_print("Adding song to autoplaylist: %s" % song_url)
+                write_file(self.config.auto_playlist_file, self.autoplaylist)
+                await self.safe_send_message(channel, "Added **%s** to autoplaylist" % song_title)
         else:
-            raise exceptions.CommandError("Exceeded %s entries in autoplaylist", expire_in=20)
+            await self.safe_send_message("WARNING: Exceeded %s entries in autoplaylist" % MAXIMUM_AUTOPLAYLIST_LIMIT, expire_in=20)
 
     # TODO: autosummon option to a specific channel
     async def _auto_summon(self):
@@ -856,7 +855,17 @@ class MusicBot(discord.Client):
             raise exceptions.CommandError('Invalid URL provided:\n{}\n'.format(server_link), expire_in=30)
 
     @owner_only
-    async def cmd_promote(self, player):
+    async def cmd_reloadapl(self):
+        """
+        Usage:
+            {command_prefix}reloadapl
+
+        Reloads the autoplaylist. Expensive operation, use sparingly.
+        """
+        self.autoplaylist = load_file(self.config.auto_playlist_file)
+
+    @owner_only
+    async def cmd_promote(self, player, channel):
         """
         Usage:
             {command_prefix}promote
@@ -866,13 +875,13 @@ class MusicBot(discord.Client):
 
         if player.current_entry:
             song_url = player.current_entry.url
-            self._append_to_autoplaylist(song_url)
+            await self._append_to_autoplaylist(channel, song_url, player.current_entry.title)
         else:
             # TODO: when does this happen?
             raise exceptions.CommandError("The player has no currenty entry!", expire_in=20)
 
     @owner_only
-    async def cmd_demote(self, player):
+    async def cmd_demote(self, player, channel):
         """
         Usage:
             {command_prefix}demote
@@ -889,6 +898,9 @@ class MusicBot(discord.Client):
 
             self.safe_print("Removing song from autoplaylist: %s" % song_url)
             write_file(self.config.auto_playlist_file, self.autoplaylist)
+
+            song_title = player.current_entry.title
+            await self.safe_send_message(channel, "removed **%s** from autoplaylist" % song_title)
         else:
             raise exceptions.CommandError("The player has no currenty entry!", expire_in=20)
 
@@ -903,11 +915,6 @@ class MusicBot(discord.Client):
         """
 
         song_url = song_url.strip('<>')
-
-        # Automatically append song to autoplaylist if permitted
-        user_permissions = self.permissions.for_user(author)
-        if user_permissions.auto_save_song or author.id == self.config.owner_id:
-            self._append_to_autoplaylist(song_url)
 
         if permissions.max_songs and player.playlist.count_for_user(author) >= permissions.max_songs:
             raise exceptions.PermissionsError(
@@ -1070,6 +1077,10 @@ class MusicBot(discord.Client):
 
                 return await self.cmd_play(player, channel, author, permissions, leftover_args, e.use_url)
 
+            # Automatically append song to autoplaylist if permitted
+            user_permissions = self.permissions.for_user(author)
+            if user_permissions.auto_save_song or author.id == self.config.owner_id:
+                await self._append_to_autoplaylist(channel, song_url, entry.title)
             reply_text = "Enqueued **%s** to be played. Position in queue: %s"
             btext = entry.title
 
